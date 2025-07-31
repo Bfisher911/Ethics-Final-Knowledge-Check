@@ -1,0 +1,574 @@
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { ArrowPathIcon, ArrowDownTrayIcon } from '@heroicons/react/24/solid';
+import Chart from 'chart.js/auto';
+// Removed the direct import for html2pdf.js to resolve the build error.
+// The library will be accessed from the window object, assuming it's loaded via a script tag.
+
+// --- DATA (quizData.ts) ---
+export interface Option {
+  label: string;
+  correct: boolean;
+}
+export interface Question {
+  id: number;
+  text: string;
+  options: Option[];
+}
+
+export const questions: Question[] = [
+  { id: 1, text: "Which ethical theory says morality is determined by adherence to duty and universal maxims?", options: [{ label: "Utilitarianism", correct: false }, { label: "Deontology", correct: true }, { label: "Ethical Egoism", correct: false }, { label: "Care Ethics", correct: false }] },
+  { id: 2, text: "Aristotle’s virtue ethics claims moral behavior is achieved by:", options: [{ label: "Calculating net happiness", correct: false }, { label: "Obeying divine commands", correct: false }, { label: "Finding the Golden Mean between extremes", correct: true }, { label: "Serving self-interest first", correct: false }] },
+  { id: 3, text: "Kant’s categorical imperative requires that you:", options: [{ label: "Act to maximize overall happiness", correct: false }, { label: "Treat humanity always as an end and never merely as a means", correct: true }, { label: "Follow cultural norms unquestioningly", correct: false }, { label: "Prioritize personal gain", correct: false }] },
+  { id: 4, text: "In cultural relativism, moral rightness depends primarily on:", options: [{ label: "Consequences for society’s happiness", correct: false }, { label: "God’s commands", correct: false }, { label: "The norms of one’s own society", correct: true }, { label: "Universal human rights", correct: false }] },
+  { id: 5, text: "Which theory justifies actions if they produce the greatest good for the greatest number?", options: [{ label: "Virtue Ethics", correct: false }, { label: "Utilitarianism", correct: true }, { label: "Divine Command", correct: false }, { label: "Kantianism", correct: false }] },
+  { id: 6, text: "Ethical egoism asserts that people ought to:", options: [{ label: "Always sacrifice for others", correct: false }, { label: "Act in their own long-term self-interest", correct: true }, { label: "Follow cultural custom", correct: false }, { label: "Seek divine approval", correct: false }] },
+  { id: 7, text: "Social contract theory argues moral rules arise from:", options: [{ label: "Agreements among free, rational agents", correct: true }, { label: "Natural law ordained by God", correct: false }, { label: "Utility calculations", correct: false }, { label: "Character development alone", correct: false }] },
+  { id: 8, text: "Care ethics places primary moral weight on:", options: [{ label: "Universal rules", correct: false }, { label: "Relationships and empathy", correct: true }, { label: "Maximizing utility", correct: false }, { label: "Personal profit", correct: false }] },
+  { id: 9, text: "In tech ethics, 'automation bias' refers to:", options: [{ label: "Overreliance on algorithmic outputs", correct: true }, { label: "Violations of user privacy", correct: false }, { label: "Programmer virtue deficiencies", correct: false }, { label: "Religious objections to AI", correct: false }] },
+  { id: 10, text: "Which sci-fi novel explores utilitarian reasoning through child soldiers and total war?", options: [{ label: "Ender’s Game", correct: true }, { label: "Brave New World", correct: false }, { label: "Do Androids Dream of Electric Sheep?", correct: false }, { label: "Frankenstein", correct: false }] },
+  { id: 11, text: "The Euthyphro dilemma challenges divine command theory by asking whether acts are good because:", options: [{ label: "They benefit the majority", correct: false }, { label: "God commands them", correct: false }, { label: "They are independently good", correct: true }, { label: "Society approves", correct: false }] },
+  { id: 12, text: "Which ethical approach most strongly condemns mass surveillance for treating individuals as means, not ends?", options: [{ label: "Utilitarianism", correct: false }, { label: "Kantian Deontology", correct: true }, { label: "Cultural Relativism", correct: false }, { label: "Ethical Egoism", correct: false }] },
+  { id: 13, text: "A developer withholding an addictive app best illustrates which virtue?", options: [{ label: "Prudence", correct: false }, { label: "Justice", correct: false }, { label: "Temperance", correct: true }, { label: "Courage", correct: false }] },
+  { id: 14, text: "John Stuart Mill’s revision of Benthamite utilitarianism emphasized:", options: [{ label: "Quality of pleasures", correct: true }, { label: "The Golden Mean", correct: false }, { label: "Divine will", correct: false }, { label: "Self-interest", correct: false }] },
+  { id: 15, text: "According to care ethics, moral decisions should primarily consider:", options: [{ label: "Universal laws", correct: false }, { label: "Consequences for the masses", correct: false }, { label: "Caring relationships", correct: true }, { label: "Financial outcomes", correct: false }] },
+  { id: 16, text: "The ‘veil of ignorance’ thought experiment is associated with:", options: [{ label: "Social Contract Theory", correct: true }, { label: "Virtue Ethics", correct: false }, { label: "Divine Command", correct: false }, { label: "Ethical Egoism", correct: false }] },
+  { id: 17, text: "An ethicist who forbids autonomous weapons unless they respect non-combatant immunity is most likely a:", options: [{ label: "Deontologist", correct: true }, { label: "Utilitarian", correct: false }, { label: "Egoist", correct: false }, { label: "Relativist", correct: false }] },
+  { id: 18, text: "Black Mirror’s 'Nosedive' social-credit system exemplifies which ethical danger?", options: [{ label: "Manipulative social engineering that erodes authentic virtue", correct: true }, { label: "Overreliance on divine authority", correct: false }, { label: "Collective happiness maximization", correct: false }, { label: "Strict Kantian duty", correct: false }] },
+  { id: 19, text: "An AI doctor overriding patient wishes to maximize survival aligns most with:", options: [{ label: "Utilitarianism", correct: true }, { label: "Deontology", correct: false }, { label: "Virtue Ethics", correct: false }, { label: "Ethical Egoism", correct: false }] },
+  { id: 20, text: "Granting moral status to an empathic AI because of its relational qualities reflects:", options: [{ label: "Care Ethics", correct: true }, { label: "Utilitarianism", correct: false }, { label: "Deontology", correct: false }, { label: "Ethical Egoism", correct: false }] },
+];
+
+// --- TYPE DEFINITIONS ---
+type GameState = 'start' | 'in-progress' | 'finished';
+type Answers = Record<number, number>;
+
+// --- UI COMPONENTS ---
+
+const StarfieldBackground = () => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let stars: { x: number; y: number; z: number }[] = [];
+    const numStars = 500;
+    let animationFrameId: number;
+
+    const setup = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      stars = [];
+      for (let i = 0; i < numStars; i++) {
+        stars.push({
+          x: Math.random() * canvas.width - canvas.width / 2,
+          y: Math.random() * canvas.height - canvas.height / 2,
+          z: Math.random() * canvas.width,
+        });
+      }
+    };
+
+    const draw = () => {
+      ctx.fillStyle = '#111';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.save();
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.fillStyle = '#fff';
+      stars.forEach(star => {
+        star.z -= 2;
+        if (star.z <= 0) {
+          star.x = Math.random() * canvas.width - canvas.width / 2;
+          star.y = Math.random() * canvas.height - canvas.height / 2;
+          star.z = canvas.width;
+        }
+
+        const k = 128 / star.z;
+        const px = star.x * k;
+        const py = star.y * k;
+
+        const size = ((1 - star.z / canvas.width) * 5);
+        ctx.beginPath();
+        ctx.arc(px, py, size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.restore();
+
+      animationFrameId = requestAnimationFrame(draw);
+    };
+
+    const handleResize = () => {
+      cancelAnimationFrame(animationFrameId);
+      setup();
+      draw();
+    };
+
+    setup();
+    draw();
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} className="fixed top-0 left-0 w-full h-full -z-10" />;
+};
+
+const Toast = ({ message, show, type }: { message: string; show: boolean; type: 'correct' | 'incorrect' }) => {
+  const bgColor = type === 'correct' ? 'bg-green-500/20 border-green-500' : 'bg-red-500/20 border-red-500';
+  const textColor = type === 'correct' ? 'text-green-300' : 'text-red-300';
+
+  return (
+    <div
+      aria-live="assertive"
+      className={`fixed top-5 right-5 p-4 rounded-lg border text-white transition-all duration-300 ease-in-out ${bgColor} ${textColor} ${
+        show ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
+      }`}
+    >
+      {message}
+    </div>
+  );
+};
+
+const Confetti = ({ active }: { active: boolean }) => {
+  if (!active) return null;
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      {[...Array(100)].map((_, i) => (
+        <div
+          key={i}
+          className="confetti-piece"
+          style={{
+            left: `${Math.random() * 100}%`,
+            animationDelay: `${Math.random() * 2}s`,
+            '--color1': '#0ff',
+            '--color2': '#f0f',
+            '--color3': '#08f',
+          } as React.CSSProperties}
+        />
+      ))}
+    </div>
+  );
+};
+
+const LandingHero = ({ onStart }: { onStart: () => void }) => (
+  <div className="flex flex-col items-center justify-center text-center p-4">
+    <h1 className="text-5xl md:text-7xl font-orbitron text-white mb-4" style={{ textShadow: '0 0 15px #f0f, 0 0 25px #f0f' }}>
+      Ethics Final
+    </h1>
+    <h2 className="text-3xl md:text-5xl font-orbitron text-white mb-8" style={{ textShadow: '0 0 10px #0ff, 0 0 15px #0ff' }}>
+      Knowledge Check
+    </h2>
+    <p className="text-lg text-gray-300 max-w-2xl mx-auto mb-12">
+      Test your understanding of core ethical theories and concepts. Twenty questions to challenge your moral compass.
+    </p>
+    <button
+      onClick={onStart}
+      className="font-orbitron text-2xl bg-transparent border-2 border-[#0ff] text-[#0ff] py-3 px-10 rounded-lg shadow-lg hover:bg-[#0ff] hover:text-[#111] hover:shadow-cyan-400/50 transition-all duration-300 transform hover:-translate-y-1 focus:outline-none focus:ring-4 focus:ring-cyan-300/50"
+    >
+      Start Quiz
+    </button>
+  </div>
+);
+
+const ProgressBar = ({ current, total }: { current: number; total: number }) => (
+  <div className="flex justify-center items-center space-x-2 my-6" aria-label={`Question ${current + 1} of ${total}`}>
+    {[...Array(total)].map((_, i) => (
+      <div
+        key={i}
+        className={`w-4 h-4 rounded-full transition-all duration-300 ${
+          i <= current ? 'bg-[#0ff] shadow-cyan-400/50' : 'bg-gray-700'
+        }`}
+      />
+    ))}
+  </div>
+);
+
+const QuestionCard = ({
+  question,
+  onAnswer,
+  currentQuestionIndex,
+}: {
+  question: Question;
+  onAnswer: (selectedIndex: number) => void; // FIX: Pass the index instead of a boolean
+  currentQuestionIndex: number;
+}) => {
+  const [selected, setSelected] = useState<number | null>(null);
+  const [answered, setAnswered] = useState(false);
+
+  useEffect(() => {
+    setSelected(null);
+    setAnswered(false);
+  }, [question]);
+
+  const handleSelect = (index: number) => {
+    if (answered) return;
+    setSelected(index);
+    setAnswered(true);
+    onAnswer(index); // FIX: Pass the selected index to the parent
+  };
+
+  return (
+    <div className="w-full max-w-3xl mx-auto p-6 bg-black/30 backdrop-blur-md rounded-2xl border border-gray-700 shadow-2xl shadow-black/50">
+      <ProgressBar current={currentQuestionIndex} total={questions.length} />
+      <h2 className="text-2xl md:text-3xl font-inter text-gray-200 text-center mb-8 leading-relaxed">
+        {question.text}
+      </h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {question.options.map((option, index) => {
+          const isCorrect = option.correct;
+          const isSelected = selected === index;
+          
+          let buttonClass = 'border-[#08f] text-[#08f] hover:bg-[#08f] hover:text-white';
+          if (answered) {
+            if (isCorrect) {
+              buttonClass = 'border-green-500 bg-green-500/30 text-white';
+            } else if (isSelected && !isCorrect) {
+              buttonClass = 'border-red-500 bg-red-500/30 text-white';
+            } else {
+              buttonClass = 'border-gray-600 text-gray-400 opacity-60';
+            }
+          }
+
+          return (
+            <button
+              key={index}
+              onClick={() => handleSelect(index)}
+              disabled={answered}
+              className={`w-full p-4 rounded-lg border-2 text-left font-inter text-lg transition-all duration-300 transform hover:-translate-y-1 disabled:transform-none disabled:cursor-not-allowed ${buttonClass}`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const ResultsChart = ({ score, average }: { score: number; average: number }) => {
+  const chartRef = useRef<HTMLCanvasElement>(null);
+  const chartInstance = useRef<Chart | null>(null);
+
+  useEffect(() => {
+    if (!chartRef.current) return;
+    
+    if (chartInstance.current) {
+        chartInstance.current.destroy();
+    }
+
+    const ctx = chartRef.current.getContext('2d');
+    if (!ctx) return;
+
+    chartInstance.current = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: ['Your Score', 'Class Average'],
+        datasets: [{
+          label: 'Score Comparison',
+          data: [score, average],
+          backgroundColor: ['rgba(0, 255, 255, 0.5)', 'rgba(255, 0, 255, 0.5)'],
+          borderColor: ['#0ff', '#f0f'],
+          borderWidth: 2,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: {
+            beginAtZero: true,
+            max: 100,
+            grid: { color: 'rgba(255, 255, 255, 0.1)' },
+            ticks: { 
+              color: '#fff', 
+              font: { family: "'Inter', sans-serif", size: 14 },
+              callback: (value) => value + '%'
+            },
+          },
+          x: {
+            grid: { display: false },
+            ticks: { color: '#fff', font: { family: "'Orbitron', sans-serif", size: 16 } },
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            enabled: false
+          }
+        },
+        animation: {
+          duration: 1500,
+          easing: 'easeOutBounce'
+        }
+      }
+    });
+    
+    return () => {
+        if(chartInstance.current) {
+            chartInstance.current.destroy();
+        }
+    }
+  }, [score, average]);
+
+  return <div className="h-64 w-full max-w-md mx-auto"><canvas ref={chartRef} /></div>;
+};
+
+
+const ResultsPanel = ({ score, onRetake, onDownload, answers }: { score: { correct: number, total: number, percent: number }; onRetake: () => void; onDownload: () => void; answers: Answers }) => {
+  const classAverage = 75; // Placeholder
+
+  return (
+    <>
+      <div id="results-panel" className="w-full max-w-4xl mx-auto p-6 md:p-8 bg-black/30 backdrop-blur-md rounded-2xl border border-gray-700 shadow-2xl shadow-black/50 text-white text-center">
+        <h2 className="text-4xl md:text-6xl font-orbitron text-white mb-4" style={{ textShadow: '0 0 15px #0ff, 0 0 25px #0ff' }}>
+          Results
+        </h2>
+        <p className="text-xl text-gray-300 mb-6">You've completed the knowledge check.</p>
+        
+        <div className="flex flex-col md:flex-row items-center justify-around gap-8">
+          <div className="flex flex-col items-center">
+            <p className="text-2xl font-inter mb-2">Your Score</p>
+            <p className="text-8xl font-orbitron text-[#0ff]" style={{ textShadow: '0 0 10px #0ff' }}>{score.percent}<span className="text-4xl">%</span></p>
+            <p className="text-lg text-gray-400 mt-2">{score.correct} / {score.total} Correct</p>
+          </div>
+          <div className="w-full md:w-1/2">
+            <ResultsChart score={score.percent} average={classAverage} />
+          </div>
+        </div>
+
+        <div className="mt-12 flex flex-col sm:flex-row justify-center items-center gap-4">
+          <button
+            onClick={onDownload}
+            className="w-full sm:w-auto font-orbitron text-lg bg-transparent border-2 border-[#f0f] text-[#f0f] py-3 px-8 rounded-lg shadow-lg hover:bg-[#f0f] hover:text-[#111] hover:shadow-fuchsia-400/50 transition-all duration-300 transform hover:-translate-y-1 focus:outline-none focus:ring-4 focus:ring-fuchsia-300/50 flex items-center justify-center gap-2"
+          >
+            <ArrowDownTrayIcon className="w-6 h-6" />
+            Download PDF
+          </button>
+          <button
+            onClick={onRetake}
+            className="w-full sm:w-auto font-orbitron text-lg bg-transparent border-2 border-[#0ff] text-[#0ff] py-3 px-8 rounded-lg shadow-lg hover:bg-[#0ff] hover:text-[#111] hover:shadow-cyan-400/50 transition-all duration-300 transform hover:-translate-y-1 focus:outline-none focus:ring-4 focus:ring-cyan-300/50 flex items-center justify-center gap-2"
+          >
+            <ArrowPathIcon className="w-6 h-6" />
+            Retake Quiz
+          </button>
+        </div>
+      </div>
+      
+      {/* Hidden element for PDF generation */}
+      <div id="pdfReport" className="hidden">
+          <div style={{ fontFamily: 'Inter, sans-serif', padding: '2rem', color: '#333' }}>
+              <div style={{ textAlign: 'center', borderBottom: '2px solid #f0f', paddingBottom: '1rem', marginBottom: '2rem' }}>
+                  <h1 style={{ fontFamily: 'Orbitron, sans-serif', color: '#111', fontSize: '2.5rem' }}>Ethics Knowledge Check</h1>
+                  <p style={{ fontSize: '1.2rem' }}>Results Summary</p>
+              </div>
+              <div style={{ textAlign: 'center', marginBottom: '2rem', background: '#eee', padding: '1rem', borderRadius: '8px' }}>
+                  <h2 style={{ fontFamily: 'Orbitron, sans-serif', margin: 0 }}>Final Score: {score.percent}%</h2>
+                  <p style={{ margin: '0.5rem 0 0 0' }}>({score.correct} out of {score.total} questions correct)</p>
+                  <p style={{ margin: '0.5rem 0 0 0', color: '#555' }}>Report generated on: {new Date().toLocaleString()}</p>
+              </div>
+              
+              <h3 style={{ fontFamily: 'Orbitron, sans-serif', borderBottom: '1px solid #ccc', paddingBottom: '0.5rem', marginBottom: '1rem' }}>Your Answers</h3>
+              
+              {questions.map((q) => {
+                  const userAnswerIndex = answers[q.id];
+                  const userAnswer = userAnswerIndex !== undefined ? q.options[userAnswerIndex] : null;
+                  const correctAnswer = q.options.find(opt => opt.correct);
+                  const isCorrect = userAnswer?.correct;
+
+                  return (
+                      <div key={q.id} style={{ marginBottom: '1.5rem', padding: '1rem', border: '1px solid #ddd', borderRadius: '8px' }}>
+                          <p style={{ fontWeight: 'bold' }}>Question {q.id}: {q.text}</p>
+                          <p style={{ color: isCorrect ? 'green' : 'red' }}>Your Answer: {userAnswer ? userAnswer.label : 'Not Answered'}</p>
+                          {!isCorrect && correctAnswer && <p style={{ color: 'green' }}>Correct Answer: {correctAnswer.label}</p>}
+                      </div>
+                  );
+              })}
+          </div>
+      </div>
+    </>
+  );
+};
+
+
+// --- MAIN APP COMPONENT ---
+
+export default function App() {
+  const [gameState, setGameState] = useState<GameState>('start');
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [answers, setAnswers] = useState<Answers>({});
+  const [feedback, setFeedback] = useState<{ message: string; type: 'correct' | 'incorrect'; show: boolean }>({ message: '', type: 'correct', show: false });
+  const [showConfetti, setShowConfetti] = useState(false);
+
+  // Load state from localStorage on initial render
+  useEffect(() => {
+    try {
+      const savedState = localStorage.getItem('ethicsQuizState');
+      if (savedState) {
+        const { index, savedAnswers } = JSON.parse(savedState);
+        if (index < questions.length) {
+          setCurrentQuestionIndex(index);
+          setAnswers(savedAnswers);
+          setGameState('in-progress');
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load state from localStorage", error);
+      localStorage.removeItem('ethicsQuizState');
+    }
+  }, []);
+
+  // Save state to localStorage whenever it changes
+  useEffect(() => {
+    if (gameState === 'in-progress') {
+      try {
+        const stateToSave = JSON.stringify({ index: currentQuestionIndex, savedAnswers: answers });
+        localStorage.setItem('ethicsQuizState', stateToSave);
+      } catch (error) {
+        console.error("Failed to save state to localStorage", error);
+      }
+    }
+  }, [currentQuestionIndex, answers, gameState]);
+
+  const handleStart = () => {
+    setGameState('in-progress');
+  };
+
+  // FIX: This function now correctly handles the answer logic.
+  const handleAnswer = (selectedIndex: number) => {
+    const currentQuestion = questions[currentQuestionIndex];
+    const isCorrect = currentQuestion.options[selectedIndex].correct;
+
+    setAnswers(prev => ({ ...prev, [currentQuestion.id]: selectedIndex }));
+    
+    setFeedback({ message: isCorrect ? 'Correct!' : 'Incorrect...', type: isCorrect ? 'correct' : 'incorrect', show: true });
+    
+    if (isCorrect) {
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 2000);
+    }
+
+    setTimeout(() => {
+      setFeedback(prev => ({ ...prev, show: false }));
+      if (currentQuestionIndex < questions.length - 1) {
+        setCurrentQuestionIndex(prev => prev + 1);
+      } else {
+        setGameState('finished');
+        localStorage.removeItem('ethicsQuizState');
+      }
+    }, 2000);
+  };
+
+  const handleRetake = () => {
+    setCurrentQuestionIndex(0);
+    setAnswers({});
+    setGameState('start');
+  };
+
+  const handleDownload = () => {
+    // FIX: Access html2pdf from the window object and add a check for its existence.
+    if (window.html2pdf) {
+        const element = document.getElementById('pdfReport');
+        if (element) {
+            element.style.display = 'block';
+            const opt = {
+                margin: 0.5,
+                filename: `ethics-score-${Date.now()}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true },
+                jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+            };
+            window.html2pdf().from(element).set(opt).save().then(() => {
+                element.style.display = 'none';
+            });
+        }
+    } else {
+        console.error("html2pdf.js library not found. Make sure it's loaded.");
+        alert("Sorry, the PDF generation library is currently unavailable.");
+    }
+  };
+  
+  const score = useMemo(() => {
+    let correct = 0;
+    questions.forEach(q => {
+      const answerIndex = answers[q.id];
+      if (answerIndex !== undefined && q.options[answerIndex]?.correct) {
+        correct++;
+      }
+    });
+    return {
+      correct,
+      total: questions.length,
+      percent: questions.length > 0 ? Math.round((correct / questions.length) * 100) : 0,
+    };
+  }, [answers]);
+  
+  const renderContent = () => {
+    switch (gameState) {
+      case 'in-progress':
+        return (
+          <QuestionCard
+            question={questions[currentQuestionIndex]}
+            onAnswer={handleAnswer}
+            currentQuestionIndex={currentQuestionIndex}
+          />
+        );
+      case 'finished':
+        return <ResultsPanel score={score} onRetake={handleRetake} onDownload={handleDownload} answers={answers} />;
+      case 'start':
+      default:
+        return <LandingHero onStart={handleStart} />;
+    }
+  };
+
+  return (
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@400;700&display=swap');
+        
+        body {
+          background-color: #111;
+          color: white;
+          font-family: 'Inter', sans-serif;
+        }
+
+        .font-orbitron { font-family: 'Orbitron', sans-serif; }
+        .font-inter { font-family: 'Inter', sans-serif; }
+        
+        .confetti-piece {
+          position: absolute;
+          width: 10px;
+          height: 20px;
+          background: linear-gradient(45deg, var(--color1), var(--color2), var(--color3));
+          top: -20px;
+          opacity: 0;
+          animation: drop 4s ease-in-out infinite;
+        }
+
+        @keyframes drop {
+          0% { transform: translateY(0) rotateZ(0); opacity: 1; }
+          100% { transform: translateY(100vh) rotateZ(720deg); opacity: 0; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+          }
+        }
+      `}</style>
+      <StarfieldBackground />
+      <main className="relative z-10 min-h-screen w-full flex items-center justify-center p-4">
+        <Confetti active={showConfetti} />
+        <Toast message={feedback.message} show={feedback.show} type={feedback.type} />
+        {renderContent()}
+      </main>
+    </>
+  );
+}
